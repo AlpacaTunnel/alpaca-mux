@@ -4,85 +4,109 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 	"time"
 )
 
 const MAX_MTU = 1500
 
-var udpClient *net.UDPAddr
+type arrayFlags []string
 
-func local2remote(connServer *net.UDPConn, connClient *net.UDPConn, remoteAddr *net.UDPAddr) {
+func (i *arrayFlags) String() string {
+	return "my string representation"
+}
+
+func (i *arrayFlags) Set(value string) error {
+	*i = append(*i, value)
+	return nil
+}
+
+func udp2mux(udpServer *net.UDPConn, udpClientAddr *net.UDPAddr, muxClient *net.UDPConn, remoteAddrs []*net.UDPAddr) {
 	buf := make([]byte, MAX_MTU)
 	for {
-		len, client, err := connServer.ReadFromUDP(buf)
+		len, client, err := udpServer.ReadFromUDP(buf)
 		if err != nil {
 			fmt.Printf("error recv: %v\n", err)
 		}
-		udpClient = client
+		*udpClientAddr = *client
 
-		_, err = connClient.WriteToUDP(buf[:len], remoteAddr)
+		for _, addr := range remoteAddrs {
+			_, err = muxClient.WriteToUDP(buf[:len], addr)
+			if err != nil {
+				fmt.Printf("error send: %v\n", err)
+			}
+		}
+	}
+}
+
+func mux2udp(muxClient *net.UDPConn, udpServer *net.UDPConn, udpClientAddr *net.UDPAddr) {
+	buf := make([]byte, MAX_MTU)
+	for {
+		len, _, err := muxClient.ReadFromUDP(buf)
+		if err != nil {
+			fmt.Printf("error recv: %v\n", err)
+		}
+
+		_, err = udpServer.WriteToUDP(buf[:len], udpClientAddr)
 		if err != nil {
 			fmt.Printf("error send: %v\n", err)
 		}
 	}
 }
 
-func remote2local(connClient *net.UDPConn, connServer *net.UDPConn) {
-	buf := make([]byte, MAX_MTU)
-	for {
-		len, _, err := connClient.ReadFromUDP(buf)
-		if err != nil {
-			fmt.Printf("error recv: %v\n", err)
-		}
-
-		_, err = connClient.WriteToUDP(buf[:len], udpClient)
-		if err != nil {
-			fmt.Printf("error send: %v\n", err)
-		}
-	}
-}
-
-func getArgs() (net.UDPAddr, net.UDPAddr, net.UDPAddr) {
+func getArgs() (*net.UDPAddr, *net.UDPAddr, []*net.UDPAddr) {
 	localPort := flag.Int("l", 1080, "local port")
-	remoteIp := flag.String("s", "", "remote server")
-	remotePort := flag.Int("p", 8000, "remote server port")
+	var servers arrayFlags
+	flag.Var(&servers, "s", "Remote server IP:Port")
 	flag.Parse()
 
-	localServer := net.UDPAddr{
+	localServer := &net.UDPAddr{
 		Port: *localPort,
 		IP:   net.ParseIP("0.0.0.0"),
 	}
 
-	localClient := net.UDPAddr{
+	localClient := &net.UDPAddr{
 		Port: 0,
 		IP:   net.ParseIP("0.0.0.0"),
 	}
 
-	remoteAddr := net.UDPAddr{
-		Port: *remotePort,
-		IP:   net.ParseIP(*remoteIp),
+	var remoteAddrs []*net.UDPAddr
+
+	for _, s := range servers {
+		ipPort := strings.Split(s, ":")
+		ip := net.ParseIP(ipPort[0])
+		port, err := strconv.Atoi(ipPort[1])
+		if ip == nil || err != nil {
+			panic("wrong IP:Port")
+		}
+		remoteAddrs = append(remoteAddrs, &net.UDPAddr{
+			IP:   ip,
+			Port: port,
+		})
 	}
 
-	return localServer, localClient, remoteAddr
+	return localServer, localClient, remoteAddrs
 }
 
 func main() {
-	localServer, localClient, remoteAddr := getArgs()
+	udpServerAddr, muxClientAddr, muxServerAddrs := getArgs()
+	var udpClientAddr net.UDPAddr
 
-	connServer, err := net.ListenUDP("udp", &localServer)
+	udpServer, err := net.ListenUDP("udp", udpServerAddr)
 	if err != nil {
 		fmt.Printf("error listen: %v\n", err)
 		return
 	}
 
-	connClient, err := net.ListenUDP("udp", &localClient)
+	muxClient, err := net.ListenUDP("udp", muxClientAddr)
 	if err != nil {
 		fmt.Printf("error listen: %v\n", err)
 		return
 	}
 
-	go local2remote(connServer, connClient, &remoteAddr)
-	go remote2local(connClient, connServer)
+	go udp2mux(udpServer, &udpClientAddr, muxClient, muxServerAddrs)
+	go mux2udp(muxClient, udpServer, &udpClientAddr)
 
 	for {
 		time.Sleep(time.Second)
