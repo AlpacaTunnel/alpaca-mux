@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math/rand"
 	"time"
 
 	mux "github.com/AlpacaTunnel/alpaca-mux"
@@ -20,16 +21,21 @@ func (i *arrayFlags) Set(value string) error {
 }
 
 func forward(fa mux.Forwarder, fb mux.Forwarder) {
-	buf := make([]byte, mux.MAX_MTU)
+	buf := make([]byte, 1500)
 	for {
 		len, err := fa.Read(buf)
 		if err != nil {
-			fmt.Printf("error read: %v\n", err)
+			mux.Log.Error("error read: %v", err)
+		}
+
+		// duplicated packet
+		if len == 0 {
+			continue
 		}
 
 		err = fb.Write(buf[:len])
 		if err != nil {
-			fmt.Printf("error write: %v\n", err)
+			mux.Log.Error("error write: %v", err)
 		}
 	}
 }
@@ -38,6 +44,7 @@ func main() {
 	client := flag.Bool("c", false, "start a client")
 	server := flag.Bool("s", false, "start a server")
 	listenPort := flag.Int("l", 1080, "listen port")
+	debug := flag.Bool("d", false, "debug log")
 	var servers arrayFlags
 	flag.Var(&servers, "u", "upstream server IP:Port")
 	flag.Parse()
@@ -48,6 +55,12 @@ func main() {
 	if len(servers) > 4 {
 		panic("too many upstream servers")
 	}
+
+	mux.Log.SetLevel("info")
+	if *debug {
+		mux.Log.SetLevel("debug")
+	}
+	rand.Seed(time.Now().UnixNano())
 
 	var fa, fb mux.Forwarder
 

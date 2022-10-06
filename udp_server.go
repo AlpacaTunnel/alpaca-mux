@@ -1,7 +1,6 @@
 package alpacamux
 
 import (
-	"fmt"
 	"net"
 )
 
@@ -28,13 +27,13 @@ func (f *UdpServer) Read(buf []byte) (int, error) {
 		return 0, err
 	}
 	f.clientAddr = *client
-	fmt.Println("udp server read from", *client)
+	log.Debug("udp server read from: %v", *client)
 
 	return len, nil
 }
 
 func (f *UdpServer) Write(buf []byte) error {
 	_, err := f.conn.WriteToUDP(buf, &f.clientAddr)
-	fmt.Println("udp server write to", f.clientAddr)
+	log.Debug("udp server write to: %v", f.clientAddr)
 	return err
 }
