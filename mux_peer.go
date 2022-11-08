@@ -9,10 +9,15 @@ import (
 
 const PATH_SIZE = 4
 
+type peerAddr struct {
+	udpAddr    *net.UDPAddr
+	lastActive int64
+}
+
 type MuxPeer struct {
 	conn        *net.UDPConn
 	dynamicPeer bool
-	peerAddrs   [PATH_SIZE]*net.UDPAddr
+	peerAddrs   [PATH_SIZE]peerAddr
 	buffer      []byte
 	timestamp   uint32
 	sequence    uint32
@@ -24,7 +29,7 @@ func (p *MuxPeer) initPeers(addrs []string) error {
 		p.dynamicPeer = true
 	}
 
-	p.peerAddrs = [PATH_SIZE]*net.UDPAddr{
+	p.peerAddrs = [PATH_SIZE]peerAddr{
 		{},
 		{},
 		{},
@@ -33,7 +38,7 @@ func (p *MuxPeer) initPeers(addrs []string) error {
 
 	for i, s := range addrs {
 		var err error
-		if p.peerAddrs[i], err = convertAddr(s); err != nil {
+		if p.peerAddrs[i].udpAddr, err = convertAddr(s); err != nil {
 			return err
 		}
 	}
@@ -80,11 +85,14 @@ func (p *MuxPeer) Write(buf []byte) error {
 
 	var err error
 	for id, addr := range p.peerAddrs {
-		if addr.Port == 0 {
+		if p.dynamicPeer && time.Now().Unix()-addr.lastActive > 60 {
+			continue
+		}
+		if addr.udpAddr.Port == 0 {
 			continue
 		}
 
-		log.Debug("mux peer write to path %v: %v", id, *addr)
+		log.Debug("mux peer write to path %v: %v", id, *addr.udpAddr)
 		header.PathID = uint16(id)
 
 		copy(p.buffer, header.ToNetwork())
@@ -94,7 +102,7 @@ func (p *MuxPeer) Write(buf []byte) error {
 		// feed random data for the obfs part
 		rand.Read(p.buffer[HEADER_LEN+bodyLen : HEADER_LEN+obfsLen])
 
-		_, e := p.conn.WriteToUDP(p.buffer[:HEADER_LEN+obfsLen], addr)
+		_, e := p.conn.WriteToUDP(p.buffer[:HEADER_LEN+obfsLen], addr.udpAddr)
 		if e != nil {
 			err = e
 		}
@@ -119,8 +127,11 @@ func (p *MuxPeer) Read(buf []byte) (int, error) {
 		return 0, fmt.Errorf("invalid path ID")
 	}
 
-	if p.dynamicPeer {
-		*(p.peerAddrs[header.PathID]) = *client
+	// update dynamic peer (client), but avoid too many updates
+	peerAddr := p.peerAddrs[header.PathID]
+	if p.dynamicPeer && time.Now().Unix()-peerAddr.lastActive > 10 {
+		*(peerAddr.udpAddr) = *client
+		peerAddr.lastActive = time.Now().Unix()
 	}
 
 	if !p.pktFilter.IsValid(header.Timestamp, header.Sequence) {
