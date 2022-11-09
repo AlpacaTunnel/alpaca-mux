@@ -45,7 +45,7 @@ func (filter *PktFilter) IsValid(timestamp, sequence uint32) bool {
 		return false
 	}
 
-	if filter.IsDuplicated(timestamp, sequence) {
+	if filter.isDuplicated(timestamp, sequence) {
 		log.Debug("Pkt is duplicated")
 		return false
 	}
@@ -53,7 +53,7 @@ func (filter *PktFilter) IsValid(timestamp, sequence uint32) bool {
 	return true
 }
 
-func (filter *PktFilter) IsDuplicated(timestamp, sequence uint32) bool {
+func (filter *PktFilter) isDuplicated(timestamp, sequence uint32) bool {
 	diff := int64(timestamp) - int64(filter.Latest)
 
 	if diff > 2 {

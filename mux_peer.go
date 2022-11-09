@@ -17,7 +17,7 @@ type peerAddr struct {
 type MuxPeer struct {
 	conn        *net.UDPConn
 	dynamicPeer bool
-	peerAddrs   [PATH_SIZE]peerAddr
+	peerAddrs   [PATH_SIZE]*peerAddr
 	buffer      []byte
 	timestamp   uint32
 	sequence    uint32
@@ -29,11 +29,11 @@ func (p *MuxPeer) initPeers(addrs []string) error {
 		p.dynamicPeer = true
 	}
 
-	p.peerAddrs = [PATH_SIZE]peerAddr{
-		{},
-		{},
-		{},
-		{},
+	p.peerAddrs = [PATH_SIZE]*peerAddr{
+		{&net.UDPAddr{}, 0},
+		{&net.UDPAddr{}, 0},
+		{&net.UDPAddr{}, 0},
+		{&net.UDPAddr{}, 0},
 	}
 
 	for i, s := range addrs {
@@ -75,6 +75,9 @@ func (p *MuxPeer) updateTimestampSeq() {
 func (p *MuxPeer) Write(buf []byte) error {
 	p.updateTimestampSeq()
 	bodyLen := uint16(len(buf))
+	if bodyLen > MAX_MTU {
+		return fmt.Errorf("packet size too large: %d", bodyLen)
+	}
 
 	header := Header{
 		Magic:     MAGIC,
@@ -88,11 +91,11 @@ func (p *MuxPeer) Write(buf []byte) error {
 		if p.dynamicPeer && time.Now().Unix()-addr.lastActive > 60 {
 			continue
 		}
-		if addr.udpAddr.Port == 0 {
+		if addr.udpAddr == nil || addr.udpAddr.Port == 0 {
 			continue
 		}
 
-		log.Debug("mux peer write to path %v: %v", id, *addr.udpAddr)
+		log.Debug("mux peer write to: %v, path id: %v", *addr.udpAddr, id)
 		header.PathID = uint16(id)
 
 		copy(p.buffer, header.ToNetwork())

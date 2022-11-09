@@ -6,10 +6,17 @@ A UDP proxy with multiple paths.
 # Topology
 
 ```
-                                       ┌────── path 1 ──────┐
-app-client -> udp-server -> mux-client ┼────── path 2 ──────┼ mux-server -> udp-client -> app-server
-                                       └────── path 3 ──────┘
+dns-client ──┐                                                      ┌──> dns-server
+             │                                                      │
+app-client   │                                                      │    app-server
+      ↓      ↓                                                      │      ↑
+   port-1   port-2                                               conn-2   conn-1
+      ↓      ↓                ┌────── path 1 ──────┐                ↑      ↑
+     udp-server -> mux-client ┼────── path 2 ──────┼ mux-server -> udp-client
+                              └────── path 3 ──────┘
 ```
+
+Proxy multiple UDP ports over a single mux session, then transport a mux session over multiple paths. The second UDP port is useful when chaining shadowsocks -> kcptun -> alpaca-mux, because kcptun does not support UDP relay.
 
 A path can be implemented by adding iptable port forward rules on a middler server.
 

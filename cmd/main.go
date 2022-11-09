@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"time"
 
 	mux "github.com/AlpacaTunnel/alpaca-mux"
@@ -43,11 +44,29 @@ func forward(fa mux.Forwarder, fb mux.Forwarder) {
 func main() {
 	client := flag.Bool("c", false, "start a client")
 	server := flag.Bool("s", false, "start a server")
-	listenPort := flag.Int("l", 1080, "listen port")
 	debug := flag.Bool("d", false, "debug log")
+
+	var listenPorts arrayFlags
+	flag.Var(&listenPorts, "l", "listen port")
 	var servers arrayFlags
 	flag.Var(&servers, "u", "upstream server IP:Port")
 	flag.Parse()
+
+	if !*client && !*server {
+		panic("choose client or server")
+	}
+
+	if len(listenPorts) == 0 {
+		panic("empty listen ports")
+	}
+	ports := make([]int, 0)
+	for _, p := range listenPorts {
+		i, err := strconv.Atoi(p)
+		if err != nil {
+			panic(err)
+		}
+		ports = append(ports, i)
+	}
 
 	if len(servers) == 0 {
 		panic("empty upstream servers")
@@ -65,13 +84,13 @@ func main() {
 	var fa, fb mux.Forwarder
 
 	if *client {
-		fa = &mux.UdpServer{Port: *listenPort}
+		fa = &mux.UdpServer{Ports: ports}
 		fb = &mux.MuxClient{Servers: servers}
 	}
 
 	if *server {
-		fa = &mux.MuxServer{Port: *listenPort}
-		fb = &mux.UdpClient{Server: servers[0]}
+		fa = &mux.MuxServer{Port: ports[0]}
+		fb = &mux.UdpClient{Servers: servers}
 	}
 
 	if err := fa.Listen(); err != nil {

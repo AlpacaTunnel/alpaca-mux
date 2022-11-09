@@ -6,7 +6,7 @@ import (
 
 const (
 	HEADER_LEN = 16
-	MAX_MTU    = 1450
+	MAX_MTU    = 1500 - 20 - 8 - HEADER_LEN // ETH-IP-UDP-MUX
 	MAGIC      = 20202
 )
 
